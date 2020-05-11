@@ -1,9 +1,8 @@
 package main
 
 import (
-	"github.com/laches1sm/config_map_controller/controller"
+	controller "github.com/laches1sm/config_map_controller"
 )
 
 func main() {
-	configMapController := controller.NewConfigMapController()
 }
