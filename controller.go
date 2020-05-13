@@ -2,19 +2,19 @@ package controller
 
 import (
 	"errors"
+	"io/ioutil"
+	"net/http"
+
 	"github.com/kubernetes/client-go/kubernetes"
 	"github.com/kubernetes/client-go/kubernetes/typed/core/v1"
 	"github.com/kubernetes/client-go/tools/cache"
 	"github.com/kubernetes/client-go/util/workqueue"
-	"ioutil"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"net/http"
 )
 
 // ConfigMapController is a representation of the controller used to modify k8s ClientSets
@@ -28,7 +28,6 @@ type ConfigMapController struct {
 
 type clientSetController interface {
 	UpdateConfigMap()
-	RecordEvent()
 	Run()
 }
 
@@ -63,9 +62,7 @@ func NewConfigMapController() *ConfigMapController {
 		AddFunc: func(obj interface{}) {
 			controller.UpdateConfigMap(obj)
 		},
-		UpdateFunc: func(obj interface{}) {
-			controller.UpdateConfigMap(obj)
-		},
+		
 		DeleteFunc: func(obj interface{}) {
 			controller.UpdateConfigMap(obj)
 		},
@@ -74,16 +71,34 @@ func NewConfigMapController() *ConfigMapController {
 
 }
 
+// UpdateConfigMap ...
 func (c *ConfigMapController) UpdateConfigMap(obj interface{}) {
-	joke, err := getURLContents("")
-	if err != nil {
-		c.RecordEvent(obj, err.Error())
+	joke, err := getURLContents("curl-a-joke.herokuapp.com")
+	if err != nil{
+		c.recorder.Event(nil, "error", err.Error(), "failed to get joke")
 	}
+	configMap := obj.(*corev1.ConfigMap)
+
+			// Copy pod and update the annotation.
+			newConfigMap := configMap.DeepCopy()
+			ann := newConfigMap.ObjectMeta.Annotations
+			if ann == nil {
+				ann = make(map[string]string)
+			}
+			ann["x-k8s.io/curl-me-that"] = joke
+			newConfigMap.ObjectMeta.Annotations = ann
+
+			_, err = c.clientset.CoreV1().ConfigMaps(newConfigMap.ObjectMeta.Namespace).Update(newConfigMap)
+			if err != nil {
+				c.recorder.Event(nil, "error", err.Error(), "error while getting joke")
+			}
 }
 
-func (c *ConfigMapController) RecordEvent(obj interface{}, errMsg string) {
-	c.recorder.Event(obj)
+// Run ...
+func (c *ConfigMapController) Run(stopCh <-chan struct{}) {
+	defer c.queue.ShutDown()
 
+	go c.informer.Run(stopCh)
 }
 
 func getURLContents(url string) (string, error) {

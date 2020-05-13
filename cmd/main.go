@@ -5,4 +5,7 @@ import (
 )
 
 func main() {
+	ctrl := controller.NewConfigMapController()
+	c := make(chan struct{})
+	ctrl.Run(c)
 }
